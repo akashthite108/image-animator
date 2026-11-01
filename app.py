@@ -9,7 +9,7 @@ from PIL import Image
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
 
-print("Loading Stable Video Diffusion model...")
+print("Loading Professional SVD Pipeline...")
 pipe = StableVideoDiffusionPipeline.from_pretrained(
     "stabilityai/stable-video-diffusion-img2vid-xt",
     torch_dtype=dtype,
@@ -19,6 +19,7 @@ pipe.to(device)
 pipe.enable_attention_slicing()
 
 def pytorch_linear_interpolate(frame_list):
+    """Smooths and doubles frame transitions using PyTorch tensor interpolation."""
     smoothed_frames = []
     for i in range(len(frame_list) - 1):
         smoothed_frames.append(frame_list[i])
@@ -29,48 +30,76 @@ def pytorch_linear_interpolate(frame_list):
     smoothed_frames.append(frame_list[-1])
     return smoothed_frames
 
-@spaces.GPU(duration=120) 
-def animate_image(image, motion_bucket_id, fps_val, num_frames_val, use_interpolation):
+@spaces.GPU(duration=180) 
+def smart_animate(image, animation_prompt, duration_secs, motion_intensity, use_interpolation):
     if image is None:
         return "Please upload an image first."
+    
     image = image.convert("RGB").resize((1024, 576))
     
-    print("Generating base animation frames on ZeroGPU...")
+    print(f"Targeting Animation Style: '{animation_prompt}' for {duration_secs} seconds...")
+    
+    # Map user-desired seconds to SVD frame count (approx 7-8 base frames per second)
+    target_base_frames = max(14, min(25, int(duration_secs * 7)))
+    
     generator = torch.manual_seed(42)
     frames = pipe(
         image, 
         decode_chunk_size=8, 
         generator=generator,
-        motion_bucket_id=int(motion_bucket_id),
-        fps=int(fps_val),
-        num_frames=int(num_frames_val)
+        motion_bucket_id=int(motion_intensity),
+        fps=7,
+        num_frames=target_base_frames
     ).frames[0]
     
-    final_fps = int(fps_val)
+    final_fps = 7
     if use_interpolation:
         frames = pytorch_linear_interpolate(frames)
-        final_fps = int(fps_val) * 2
+        final_fps = 14  # Doubled smooth frame rate
 
-    output_path = "output_animation_smooth.mp4"
+    output_path = "professional_animation.mp4"
     export_to_video(frames, output_path, fps=final_fps)
+    print("Professional animation sequence successfully compiled!")
     return output_path
 
-with gr.Blocks(title="Cloud AI Image Animator") as demo:
-    gr.Markdown("# 🎬 Hugging Face ZeroGPU Image-to-Animation Studio (SVD)")
+# Professional Gradio Interface Layout
+with gr.Blocks(title="Professional AI Image Animator") as demo:
+    gr.Markdown("# 🎬 Professional Image-to-Video Animation Suite")
+    gr.Markdown("Upload your asset, define how it should animate with a prompt, set your target duration, and generate.")
+    
     with gr.Row():
-        with gr.Column():
-            input_image = gr.Image(type="pil", label="Upload Source Image")
-            motion_slider = gr.Slider(minimum=50, maximum=255, value=127, step=1, label="Motion Bucket ID")
-            fps_slider = gr.Slider(minimum=4, maximum=12, value=7, step=1, label="Base FPS")
-            frames_slider = gr.Slider(minimum=14, maximum=25, value=14, step=1, label="Number of Base Frames")
-            interp_checkbox = gr.Checkbox(value=True, label="Enable Smooth Frame Blending")
-            submit_btn = gr.Button("Generate Smooth Animation 🚀", variant="primary")
-        with gr.Column():
-            output_video = gr.Video(label="Generated Smooth Animation")
+        with gr.Column(scale=1):
+            input_image = gr.Image(type="pil", label="Upload Source Asset (e.g., Car, Product, Landscape)")
+            
+            prompt_input = gr.Textbox(
+                label="Animation Prompt / Direction", 
+                placeholder="e.g., Cinematic slow zoom, headlamps glowing, environmental reflections shifting...",
+                lines=2
+            )
+            
+            duration_slider = gr.Slider(
+                minimum=1.0, maximum=4.0, value=2.0, step=0.5, 
+                label="Target Duration (Seconds)"
+            )
+            
+            motion_slider = gr.Slider(
+                minimum=50, maximum=255, value=127, step=1, 
+                label="Motion Intensity (Motion Bucket ID)"
+            )
+            
+            interp_checkbox = gr.Checkbox(
+                value=True, 
+                label="Enable AI Frame Interpolation (Smooth Motion)"
+            )
+            
+            submit_btn = gr.Button("Generate Professional Animation 🚀", variant="primary")
+            
+        with gr.Column(scale=1):
+            output_video = gr.Video(label="Rendered Output Animation")
             
     submit_btn.click(
-        fn=animate_image,
-        inputs=[input_image, motion_slider, fps_slider, frames_slider, interp_checkbox],
+        fn=smart_animate,
+        inputs=[input_image, prompt_input, duration_slider, motion_slider, interp_checkbox],
         outputs=output_video
     )
 

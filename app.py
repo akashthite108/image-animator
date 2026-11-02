@@ -9,14 +9,17 @@ from PIL import Image
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
 
-print("Loading Professional SVD Pipeline...")
+print("Loading Professional SVD Pipeline with memory optimizations...")
 pipe = StableVideoDiffusionPipeline.from_pretrained(
     "stabilityai/stable-video-diffusion-img2vid-xt",
     torch_dtype=dtype,
-    variant="fp16"
+    variant="fp16",
+    low_cpu_mem_usage=True
 )
 pipe.to(device)
 pipe.enable_attention_slicing()
+pipe.enable_vae_slicing()
+pipe.enable_vae_tiling()
 
 def pytorch_linear_interpolate(frame_list):
     """Smooths and doubles frame transitions using PyTorch tensor interpolation."""
